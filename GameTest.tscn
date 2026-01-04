@@ -1,0 +1,109 @@
+[gd_scene load_steps=3 format=3 uid="uid://2y8mjrnfnybv"]
+
+[ext_resource type="Script" uid="uid://ccm4kyaq56yt6" path="res://GameTest.gd" id="1_ll1o2"]
+[ext_resource type="PackedScene" uid="uid://dse55ssc06fj1" path="res://Dice.tscn" id="2_rsydx"]
+
+[node name="GameTest" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+script = ExtResource("1_ll1o2")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -190.0
+offset_top = -61.0
+offset_right = 190.0
+offset_bottom = 61.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+alignment = 1
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="Dice" parent="VBoxContainer/HBoxContainer" instance=ExtResource("2_rsydx")]
+layout_mode = 2
+
+[node name="Dice2" parent="VBoxContainer/HBoxContainer" instance=ExtResource("2_rsydx")]
+layout_mode = 2
+
+[node name="Dice3" parent="VBoxContainer/HBoxContainer" instance=ExtResource("2_rsydx")]
+layout_mode = 2
+
+[node name="Dice4" parent="VBoxContainer/HBoxContainer" instance=ExtResource("2_rsydx")]
+layout_mode = 2
+
+[node name="Dice5" parent="VBoxContainer/HBoxContainer" instance=ExtResource("2_rsydx")]
+layout_mode = 2
+
+[node name="Dice6" parent="VBoxContainer/HBoxContainer" instance=ExtResource("2_rsydx")]
+layout_mode = 2
+
+[node name="ScoreLabel" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = "0"
+
+[node name="ButtonBox" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_constants/separation = 98
+
+[node name="RollButton" type="Button" parent="VBoxContainer/ButtonBox"]
+layout_mode = 2
+text = "继续投掷"
+
+[node name="BankButton" type="Button" parent="VBoxContainer/ButtonBox"]
+layout_mode = 2
+text = "离手"
+
+[node name="StopButton" type="Button" parent="VBoxContainer/ButtonBox"]
+visible = false
+layout_mode = 2
+text = "查看骰子"
+
+[node name="TopBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -130.0
+offset_right = 130.0
+offset_bottom = 23.0
+grow_horizontal = 2
+theme_override_constants/separation = 100
+alignment = 1
+
+[node name="P1Label" type="Label" parent="TopBar"]
+layout_mode = 2
+text = "Player 1: 0"
+
+[node name="P2Label" type="Label" parent="TopBar"]
+layout_mode = 2
+text = "Player 2: 0"
+
+[node name="RestartButton" type="Button" parent="."]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -72.0
+offset_top = -31.0
+grow_horizontal = 0
+grow_vertical = 0
+text = "重开游戏"

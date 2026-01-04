@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3 uid="uid://dse55ssc06fj1"]
+
+[ext_resource type="Script" uid="uid://bryp35je1de0i" path="res://Dice.gd" id="1_vf2l3"]
+
+[node name="Dice" type="Button"]
+custom_minimum_size = Vector2(60, 60)
+toggle_mode = true
+text = "1"
+script = ExtResource("1_vf2l3")
