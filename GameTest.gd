@@ -25,9 +25,18 @@ var is_rolling = false     # 是否正在播放摇骰子动画
 var is_busted = false      # 是否爆掉
 var is_game_over = false   # 游戏是否结束
 
+# GameTest.gd
+
 func _ready():
 	randomize()
 	
+	# --- 新增：初始化代码控制的UI布局 ---
+	setup_ui_layout() 
+	# -------------------------------
+	
+	for die in container.get_children(): die.toggled.connect(_on_dice_clicked)
+	roll_btn.pressed.connect(_on_roll_pressed)
+
 	# 绑定信号
 	for die in container.get_children():
 		die.toggled.connect(_on_dice_clicked)
@@ -38,6 +47,58 @@ func _ready():
 	restart_btn.pressed.connect(_on_restart_pressed)
 	
 	start_game()
+
+# --- 新增这个函数：纯代码控制布局 ---
+func setup_ui_layout():
+	# 1. 确保根节点填满整个屏幕 (对应编辑器的 Full Rect)
+	# 这里的 self 指的是 GameTest 根节点
+	set_anchors_preset(Control.PRESET_FULL_RECT)
+	
+	# 2. 设置顶部栏 (TopBar) - 始终吸附顶部，宽度拉伸
+	var top_bar = $TopBar
+	top_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	# 给顶部留一点空隙，别贴着手机刘海屏
+	top_bar.offset_top = 40 
+	top_bar.offset_bottom = 100 # 设置高度
+	
+	# 3. 设置两个玩家标签 - 也就是让它们平分 TopBar 的宽度
+	# 对应 Size Flags -> Horizontal -> Expand + Fill
+	p1_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	p1_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	
+	p2_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	p2_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+	# 4. 设置核心游戏区 (VBoxContainer) - 始终居中
+	var main_vbox = $VBoxContainer
+	# 对应编辑器的 Center (屏幕正中心)
+	main_vbox.set_anchors_preset(Control.PRESET_CENTER)
+	# 确保它不会因为内容变动而跑偏，重置偏移量
+	main_vbox.set_offsets_preset(Control.PRESET_CENTER)
+	# 增加一点组件之间的间距
+	main_vbox.add_theme_constant_override("separation", 30)
+
+# 5. 设置重开按钮 (RestartButton) - 始终吸附右上角
+	restart_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	
+	# --- 修改开始 ---
+	# 不要用 position，要用 offset
+	# 逻辑是：距离右边界越远，负数越大
+	restart_btn.offset_left = -140  # 按钮左边缘距离屏幕右侧 140 像素
+	restart_btn.offset_right = -20  # 按钮右边缘距离屏幕右侧 20 像素 (留边距)
+	restart_btn.offset_top = 40     # 距离顶部 40 像素
+	restart_btn.offset_bottom = 100 # 距离顶部 100 像素 (即高度60)
+	# --- 修改结束 ---
+
+	# 6. 设置底部按钮组 (ButtonBox)
+	var btn_box = $VBoxContainer/ButtonBox
+	btn_box.alignment = BoxContainer.ALIGNMENT_CENTER # 按钮居中对齐
+	btn_box.add_theme_constant_override("separation", 20) # 按钮间距
+	
+	# 7. 确保所有按钮有最小尺寸，方便手机触摸
+	var all_btns = [roll_btn, bank_btn, stop_btn, restart_btn]
+	for btn in all_btns:
+		btn.custom_minimum_size = Vector2(120, 60) # 最小宽高
 
 # --- 关键：每帧运行的动画逻辑 ---
 func _process(delta):
