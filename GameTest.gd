@@ -50,6 +50,9 @@ func _process(delta):
 # --- 游戏流程 ---
 
 func start_game():
+	roll_btn.disabled = false
+	bank_btn.disabled = false
+	stop_btn.disabled = false
 	total_scores = [0, 0]
 	current_player_index = 0
 	is_game_over = false
@@ -61,14 +64,15 @@ func start_new_turn():
 	current_selection_score = 0
 	is_busted = false
 	
-	# 重置骰子
+	# --- 新增：新回合开始先隐藏分数板 ---
+	score_label.visible = false 
+	# --------------------------------
+	
 	for die in container.get_children():
 		die.visible = true
 		die.button_pressed = false
 		die.disabled = false
-		die.reset_visual_transform() # 归位
-	
-	# 直接开始摇！
+		die.reset_visual_transform()
 	start_rolling_anim()
 
 func switch_turn():
@@ -81,7 +85,7 @@ func switch_turn():
 # 开始摇动动画
 func start_rolling_anim():
 	is_rolling = true
-	
+	score_label.visible = false
 	# UI 切换：隐藏操作按钮，显示停止按钮
 	roll_btn.visible = false
 	bank_btn.visible = false
@@ -168,6 +172,7 @@ func check_bust_logic():
 
 func handle_bust():
 	is_busted = true
+	score_label.visible = true
 	score_label.text = "爆掉了！！！"
 	score_label.modulate = Color(1, 0, 0)
 	
@@ -211,9 +216,12 @@ func _on_dice_clicked(pressed):
 	calculate_selection_score()
 
 func calculate_selection_score():
+	# --- 新增：只要开始算分了，就显示 Label ---
+	score_label.visible = true
+	# ------------------------------------
+
 	var values = []
 	for die in container.get_children():
-		if die.visible and die.button_pressed:
-			values.append(die.value)
+		if die.visible and die.button_pressed: values.append(die.value)
 	current_selection_score = ScoreCalculator.calculate_score(values)
 	score_label.text = "本轮池分: %d (+选中: %d)" % [turn_accumulated_score, current_selection_score]
