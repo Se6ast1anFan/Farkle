@@ -31,26 +31,49 @@ size_flags_horizontal = 4
 size_flags_vertical = 4
 alignment = 1
 
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+[node name="DiceTray" type="Control" parent="VBoxContainer"]
 layout_mode = 2
 
-[node name="Dice" parent="VBoxContainer/HBoxContainer" instance=ExtResource("2_rsydx")]
-layout_mode = 2
+[node name="Dice" parent="VBoxContainer/DiceTray" instance=ExtResource("2_rsydx")]
+layout_mode = 0
+offset_right = 60.0
+offset_bottom = 60.0
 
-[node name="Dice2" parent="VBoxContainer/HBoxContainer" instance=ExtResource("2_rsydx")]
-layout_mode = 2
+[node name="Dice2" parent="VBoxContainer/DiceTray" instance=ExtResource("2_rsydx")]
+layout_mode = 0
+offset_left = 64.0
+offset_right = 124.0
+offset_bottom = 60.0
 
-[node name="Dice3" parent="VBoxContainer/HBoxContainer" instance=ExtResource("2_rsydx")]
-layout_mode = 2
+[node name="Dice3" parent="VBoxContainer/DiceTray" instance=ExtResource("2_rsydx")]
+layout_mode = 0
+offset_left = 128.0
+offset_right = 188.0
+offset_bottom = 60.0
 
-[node name="Dice4" parent="VBoxContainer/HBoxContainer" instance=ExtResource("2_rsydx")]
-layout_mode = 2
+[node name="Dice4" parent="VBoxContainer/DiceTray" instance=ExtResource("2_rsydx")]
+layout_mode = 0
+offset_left = 192.0
+offset_right = 252.0
+offset_bottom = 60.0
 
-[node name="Dice5" parent="VBoxContainer/HBoxContainer" instance=ExtResource("2_rsydx")]
-layout_mode = 2
+[node name="Dice5" parent="VBoxContainer/DiceTray" instance=ExtResource("2_rsydx")]
+layout_mode = 0
+offset_left = 256.0
+offset_right = 316.0
+offset_bottom = 60.0
 
-[node name="Dice6" parent="VBoxContainer/HBoxContainer" instance=ExtResource("2_rsydx")]
-layout_mode = 2
+[node name="Dice6" parent="VBoxContainer/DiceTray" instance=ExtResource("2_rsydx")]
+layout_mode = 0
+offset_left = 320.0
+offset_right = 380.0
+offset_bottom = 60.0
+
+[node name="DiceCup" type="Panel" parent="VBoxContainer/DiceTray"]
+layout_mode = 0
+offset_top = -4.0
+offset_right = 380.0
+offset_bottom = -4.0
 
 [node name="ScoreLabel" type="Label" parent="VBoxContainer"]
 layout_mode = 2

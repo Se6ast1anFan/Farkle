@@ -1,7 +1,8 @@
 extends Control
 
 # --- UI 引用 ---
-@onready var container = $VBoxContainer/HBoxContainer
+@onready var container = $VBoxContainer/DiceTray 
+@onready var dice_cup = $VBoxContainer/DiceTray/DiceCup
 @onready var score_label = $VBoxContainer/ScoreLabel
 @onready var p1_label = $TopBar/P1Label
 @onready var p2_label = $TopBar/P2Label
@@ -14,6 +15,8 @@ extends Control
 
 # --- 游戏数据 ---
 const WINNING_SCORE = 2000
+const TRAY_RADIUS = 150.0  # 骰盘半径
+const DICE_SIZE = 80.0     # 骰子大小 (需与你设置的 custom_minimum_size 匹配)
 var total_scores = [0, 0]
 var current_player_index = 0
 
@@ -30,22 +33,24 @@ var is_game_over = false   # 游戏是否结束
 func _ready():
 	randomize()
 	
-	# --- 新增：初始化代码控制的UI布局 ---
+	# 初始化 UI 布局
 	setup_ui_layout() 
-	# -------------------------------
 	
-	for die in container.get_children(): die.toggled.connect(_on_dice_clicked)
-	roll_btn.pressed.connect(_on_roll_pressed)
-
-	# 绑定信号
-	for die in container.get_children():
-		die.toggled.connect(_on_dice_clicked)
+	# --- 1. 绑定骰子信号 (带过滤保护) ---
+	for child in container.get_children():
+		# 关键点：必须跳过骰盅，否则报错！
+		if child == dice_cup: continue 
+		
+		# 绑定点击事件
+		child.toggled.connect(_on_dice_clicked)
 	
+	# --- 2. 绑定按钮信号 (只写一次) ---
 	roll_btn.pressed.connect(_on_roll_pressed)
 	bank_btn.pressed.connect(_on_bank_pressed)
-	stop_btn.pressed.connect(_on_stop_pressed) # 绑定停止按钮
+	stop_btn.pressed.connect(_on_stop_pressed)
 	restart_btn.pressed.connect(_on_restart_pressed)
 	
+	# 开始游戏
 	start_game()
 
 # --- 新增这个函数：纯代码控制布局 ---
@@ -100,11 +105,29 @@ func setup_ui_layout():
 	for btn in all_btns:
 		btn.custom_minimum_size = Vector2(120, 60) # 最小宽高
 
+	# --- 新增：设置骰盘 (Tray) 和 骰盅 (Cup) ---
+	# 1. 设置骰盘区域 (container)
+	# 我们给它一个固定高度，保证有空间放圆盘
+	container.custom_minimum_size = Vector2(400, 400) 
+	container.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	container.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	
+	# 2. 用代码把 DiceCup 画成一个圆形 (红色/褐色)
+	dice_cup.set_anchors_preset(Control.PRESET_FULL_RECT) # 盖住整个盘子
+	dice_cup.mouse_filter = Control.MOUSE_FILTER_IGNORE # 避免遮挡鼠标点击
+	
+	var cup_style = StyleBoxFlat.new()
+	cup_style.bg_color = Color(0.4, 0.2, 0.1) # 棕色皮革质感
+	cup_style.set_corner_radius_all(200) # 设置大圆角变成圆
+	dice_cup.add_theme_stylebox_override("panel", cup_style)
+	dice_cup.visible = false # 默认隐藏
+
 # --- 关键：每帧运行的动画逻辑 ---
 func _process(delta):
 	if is_rolling:
 		# 遍历所有可见的骰子，让它们狂乱！
 		for die in container.get_children():
+			if die == dice_cup: continue 
 			if die.visible:
 				die.roll_visual_only()
 
@@ -130,6 +153,7 @@ func start_new_turn():
 	# --------------------------------
 	
 	for die in container.get_children():
+		if die == dice_cup: continue 
 		die.visible = true
 		die.button_pressed = false
 		die.disabled = false
@@ -147,33 +171,68 @@ func switch_turn():
 func start_rolling_anim():
 	is_rolling = true
 	score_label.visible = false
-	# UI 切换：隐藏操作按钮，显示停止按钮
+	
+	# 隐藏按钮逻辑...
 	roll_btn.visible = false
 	bank_btn.visible = false
-	stop_btn.visible = true
+	stop_btn.visible = true # 此时显示 Stop 按钮
 	
-	# 禁用骰子交互，防止摇的时候乱点
-	for die in container.get_children():
-		die.disabled = true
+	# --- 新增：显示骰盅并开始摇晃 ---
+	dice_cup.visible = true
+	dice_cup.modulate.a = 1.0 # 确保不透明
+	
+	# 这一步很重要：先把骰子藏在盅底下，并重新洗牌位置
+	for die in container.get_children(): 
+		if die != dice_cup:
+			die.disabled = true
+			# 在摇的时候就可以先随机好位置，等揭开
+			# 或者你也可以在揭开瞬间随机，这里先随机是为了逻辑统一
+	
+	scatter_dice_visuals() 
+	
+	# 开始摇晃动画 (Loop)
+	start_shaking_tween()
 
-# 停止摇动动画 (点击停止按钮触发)
+var shake_tween: Tween
+
+func start_shaking_tween():
+	if shake_tween: shake_tween.kill()
+	shake_tween = create_tween().set_loops() # 无限循环摇
+	
+	# 模拟上下左右剧烈晃动
+	var base_pos = Vector2.ZERO # 相对父节点的偏移
+	shake_tween.tween_property(dice_cup, "position", Vector2(0, -20), 0.1)
+	shake_tween.tween_property(dice_cup, "position", Vector2(0, 20), 0.1)
+	# 你可以加更多关键帧让它看起来更混乱
+
 func _on_stop_pressed():
 	is_rolling = false
-	
-	# UI 切换：隐藏停止按钮，显示操作按钮
 	stop_btn.visible = false
+	
+	# 1. 停止摇晃
+	if shake_tween: shake_tween.kill()
+	dice_cup.position = Vector2.ZERO # 复位
+	
+	# 2. 播放“揭盖”动画 (1秒)
+	# 这里我们做一个简单的淡出+向上飘走的动画
+	var reveal_tween = create_tween()
+	reveal_tween.tween_property(dice_cup, "position", Vector2(0, -100), 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	reveal_tween.parallel().tween_property(dice_cup, "modulate:a", 0.0, 0.5)
+	
+	# 3. 等待动画结束
+	await reveal_tween.finished
+	dice_cup.visible = false
+	
+	# 4. 恢复交互并结算
 	roll_btn.visible = true
 	bank_btn.visible = true
 	
-	# 让骰子停下来并归位
 	for die in container.get_children():
-		die.reset_visual_transform()
-		die.disabled = false # 恢复可以点击
-		
-	# 动画结束了，现在的数字就是最终结果
-	# 立即进行算分和查爆掉
+		if die != dice_cup:
+			die.disabled = false
+			die.reset_visual_transform() # 这里的 reset 可能要改改，不要重置 position
+	
 	check_bust_logic()
-
 # --- 按钮事件 ---
 
 func _on_roll_pressed():
@@ -186,6 +245,7 @@ func _on_roll_pressed():
 		# 隐藏选中的骰子
 		var active_count = 0
 		for die in container.get_children():
+			if die == dice_cup: continue
 			if die.button_pressed:
 				die.visible = false
 				die.button_pressed = false
@@ -194,6 +254,7 @@ func _on_roll_pressed():
 		# 清台判定
 		if active_count == 0:
 			for die in container.get_children():
+				if die == dice_cup: continue
 				die.visible = true
 	
 		# 开启下一轮摇动
@@ -219,6 +280,7 @@ func _on_restart_pressed():
 func check_bust_logic():
 	var values = []
 	for die in container.get_children():
+		if die == dice_cup: continue
 		if die.visible:
 			values.append(die.value)
 	
@@ -283,6 +345,28 @@ func calculate_selection_score():
 
 	var values = []
 	for die in container.get_children():
+		if die == dice_cup: continue
 		if die.visible and die.button_pressed: values.append(die.value)
 	current_selection_score = ScoreCalculator.calculate_score(values)
 	score_label.text = "本轮池分: %d (+选中: %d)" % [turn_accumulated_score, current_selection_score]
+
+func scatter_dice_visuals():
+	for die in container.get_children():
+		if die == dice_cup: continue # 跳过骰盅节点
+		
+		# 1. 随机角度 (0 到 2π)
+		var angle = randf() * TAU 
+		
+		# 2. 随机距离 (开方是为了保证分布均匀，不会聚集在圆心)
+		# 半径减去骰子大小的一半，防止超出边界
+		var max_r = TRAY_RADIUS - (DICE_SIZE / 2)
+		var dist = sqrt(randf()) * max_r
+		
+		# 3. 计算坐标 (极坐标转笛卡尔坐标)
+		# 注意：container 的中心是 size/2
+		var center = container.size / 2
+		var offset = Vector2(cos(angle), sin(angle)) * dist
+		
+		# 4. 设置位置 (需减去骰子自身中心偏移)
+		die.position = center + offset - (Vector2(DICE_SIZE, DICE_SIZE) / 2)
+		die.rotation_degrees = randf_range(0, 360) # 随机旋转

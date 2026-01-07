@@ -28,9 +28,9 @@ func roll_visual_only():
 
 # 重置状态（停止摇动时调用）
 func reset_visual_transform():
-	rotation_degrees = 0
-	# 颜色恢复
+	# 只重置颜色和缩放，不要重置位置和旋转
 	modulate = Color(1, 1, 1)
+	scale = Vector2(1, 1)
 
 func update_visual():
 	text = str(value)
