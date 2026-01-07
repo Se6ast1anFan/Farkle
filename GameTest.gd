@@ -32,25 +32,22 @@ var is_game_over = false   # 游戏是否结束
 
 func _ready():
 	randomize()
+	setup_ui_layout()
 	
-	# 初始化 UI 布局
-	setup_ui_layout() 
-	
-	# --- 1. 绑定骰子信号 (带过滤保护) ---
+	# ... (绑定信号的代码保持不变，记得要有那个 if child == dice_cup: continue) ...
 	for child in container.get_children():
-		# 关键点：必须跳过骰盅，否则报错！
 		if child == dice_cup: continue 
-		
-		# 绑定点击事件
 		child.toggled.connect(_on_dice_clicked)
 	
-	# --- 2. 绑定按钮信号 (只写一次) ---
 	roll_btn.pressed.connect(_on_roll_pressed)
 	bank_btn.pressed.connect(_on_bank_pressed)
 	stop_btn.pressed.connect(_on_stop_pressed)
 	restart_btn.pressed.connect(_on_restart_pressed)
 	
-	# 开始游戏
+	# --- 核心修复：等待一帧 ---
+	# 让 UI 引擎先把界面排好版，确保 container.size 是正确的值
+	await get_tree().process_frame 
+	
 	start_game()
 
 # --- 新增这个函数：纯代码控制布局 ---
@@ -105,22 +102,47 @@ func setup_ui_layout():
 	for btn in all_btns:
 		btn.custom_minimum_size = Vector2(120, 60) # 最小宽高
 
-	# --- 新增：设置骰盘 (Tray) 和 骰盅 (Cup) ---
-	# 1. 设置骰盘区域 (container)
-	# 我们给它一个固定高度，保证有空间放圆盘
+# 1. 设置骰盘区域 (container)
+	# 确保这里的大小比杯子大 (杯子是320，盘子设400没问题)
 	container.custom_minimum_size = Vector2(400, 400) 
+	# 确保盘子自己在屏幕正中间
+	container.set_anchors_preset(Control.PRESET_CENTER) 
+	# 如果它是VBox的子节点，这一行很重要，让它在VBox里居中
 	container.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	container.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	
-	# 2. 用代码把 DiceCup 画成一个圆形 (红色/褐色)
-	dice_cup.set_anchors_preset(Control.PRESET_FULL_RECT) # 盖住整个盘子
-	dice_cup.mouse_filter = Control.MOUSE_FILTER_IGNORE # 避免遮挡鼠标点击
+# 2. 用代码把 DiceCup 画成一个圆形 (红色/褐色)
+	# --- 修改开始 ---
+	
+	# 设定一个固定的直径 (比盘子略小一点或者一样大)
+	var cup_diameter = 320.0 
+	
+	# 强制设定大小为正方形 (正方形+大圆角 = 正圆)
+	dice_cup.custom_minimum_size = Vector2(cup_diameter, cup_diameter)
+	dice_cup.size = Vector2(cup_diameter, cup_diameter)
+	
+	# 关键：让它居中在父节点(DiceTray)内部，而不是铺满
+# ... (前文设置大小和 anchors_preset)
+	dice_cup.set_anchors_preset(Control.PRESET_CENTER)
+	dice_cup.set_offsets_preset(Control.PRESET_CENTER)
+	
+	# --- 新增/修改：强制让它向中心生长 ---
+	dice_cup.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	dice_cup.grow_vertical = Control.GROW_DIRECTION_BOTH
+	
+	# 设置中心点 (Pivot) 为圆心，这样缩放和旋转都会围绕中心
+	dice_cup.pivot_offset = Vector2(cup_diameter / 2, cup_diameter / 2)
+	# --------------------------------
+	
+	dice_cup.mouse_filter = Control.MOUSE_FILTER_IGNORE 
 	
 	var cup_style = StyleBoxFlat.new()
-	cup_style.bg_color = Color(0.4, 0.2, 0.1) # 棕色皮革质感
-	cup_style.set_corner_radius_all(200) # 设置大圆角变成圆
+	cup_style.bg_color = Color(0.4, 0.2, 0.1) # 棕色
+	# 圆角半径设为直径的一半，保证绝对是圆的
+	cup_style.set_corner_radius_all(cup_diameter / 2) 
+	
 	dice_cup.add_theme_stylebox_override("panel", cup_style)
-	dice_cup.visible = false # 默认隐藏
+	dice_cup.visible = false 
+	# --- 修改结束 ---
 
 # --- 关键：每帧运行的动画逻辑 ---
 func _process(delta):
@@ -197,13 +219,20 @@ var shake_tween: Tween
 
 func start_shaking_tween():
 	if shake_tween: shake_tween.kill()
-	shake_tween = create_tween().set_loops() # 无限循环摇
+	shake_tween = create_tween().set_loops() 
 	
-	# 模拟上下左右剧烈晃动
-	var base_pos = Vector2.ZERO # 相对父节点的偏移
-	shake_tween.tween_property(dice_cup, "position", Vector2(0, -20), 0.1)
-	shake_tween.tween_property(dice_cup, "position", Vector2(0, 20), 0.1)
-	# 你可以加更多关键帧让它看起来更混乱
+	# --- 核心修复：数学计算绝对中心 ---
+	# 逻辑：父节点的一半尺寸 - 杯子自身的一半尺寸 = 居中坐标
+	var tray_center = container.size / 2
+	var cup_half = dice_cup.size / 2
+	var target_center = tray_center - cup_half
+	
+	# 强制先把杯子按在这个中心点上，防止它跑偏
+	dice_cup.position = target_center
+	
+	# 基于这个计算出的中心点进行摇晃
+	shake_tween.tween_property(dice_cup, "position", target_center + Vector2(0, -20), 0.1)
+	shake_tween.tween_property(dice_cup, "position", target_center + Vector2(0, 20), 0.1)
 
 func _on_stop_pressed():
 	is_rolling = false
@@ -211,7 +240,8 @@ func _on_stop_pressed():
 	
 	# 1. 停止摇晃
 	if shake_tween: shake_tween.kill()
-	dice_cup.position = Vector2.ZERO # 复位
+	dice_cup.set_anchors_preset(Control.PRESET_CENTER)
+	dice_cup.set_offsets_preset(Control.PRESET_CENTER)
 	
 	# 2. 播放“揭盖”动画 (1秒)
 	# 这里我们做一个简单的淡出+向上飘走的动画
