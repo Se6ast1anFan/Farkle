@@ -98,6 +98,15 @@ visible = false
 layout_mode = 2
 text = "查看骰子"
 
+[node name="ShakeUpBtn" type="Button" parent="VBoxContainer/ButtonBox"]
+layout_mode = 2
+text = "向上摇
+"
+
+[node name="ShakeDownBtn" type="Button" parent="VBoxContainer/ButtonBox"]
+layout_mode = 2
+text = "向下摇"
+
 [node name="TopBar" type="HBoxContainer" parent="."]
 layout_mode = 1
 anchors_preset = 5

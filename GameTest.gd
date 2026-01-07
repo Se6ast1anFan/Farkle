@@ -11,6 +11,8 @@ extends Control
 @onready var roll_btn = $VBoxContainer/ButtonBox/RollButton
 @onready var bank_btn = $VBoxContainer/ButtonBox/BankButton
 @onready var stop_btn = $VBoxContainer/ButtonBox/StopButton # 新增
+@onready var shake_up_btn = $VBoxContainer/ButtonBox/ShakeUpBtn
+@onready var shake_down_btn = $VBoxContainer/ButtonBox/ShakeDownBtn
 @onready var restart_btn = $RestartButton
 
 # --- 游戏数据 ---
@@ -42,6 +44,8 @@ func _ready():
 	roll_btn.pressed.connect(_on_roll_pressed)
 	bank_btn.pressed.connect(_on_bank_pressed)
 	stop_btn.pressed.connect(_on_stop_pressed)
+	shake_up_btn.pressed.connect(_on_shake_up)
+	shake_down_btn.pressed.connect(_on_shake_down)
 	restart_btn.pressed.connect(_on_restart_pressed)
 	
 	# --- 核心修复：等待一帧 ---
@@ -97,10 +101,15 @@ func setup_ui_layout():
 	btn_box.alignment = BoxContainer.ALIGNMENT_CENTER # 按钮居中对齐
 	btn_box.add_theme_constant_override("separation", 20) # 按钮间距
 	
-	# 7. 确保所有按钮有最小尺寸，方便手机触摸
-	var all_btns = [roll_btn, bank_btn, stop_btn, restart_btn]
+	# 7. 确保所有按钮有最小尺寸
+	# 把新按钮也加进列表里去设置大小
+	var all_btns = [roll_btn, bank_btn, stop_btn, restart_btn, shake_up_btn, shake_down_btn]
 	for btn in all_btns:
-		btn.custom_minimum_size = Vector2(120, 60) # 最小宽高
+		btn.custom_minimum_size = Vector2(120, 60)
+	
+	# 默认隐藏摇晃按钮
+	shake_up_btn.visible = false
+	shake_down_btn.visible = false
 
 # 1. 设置骰盘区域 (container)
 	# 确保这里的大小比杯子大 (杯子是320，盘子设400没问题)
@@ -194,26 +203,33 @@ func start_rolling_anim():
 	is_rolling = true
 	score_label.visible = false
 	
-	# 隐藏按钮逻辑...
+	# 隐藏常规按钮
 	roll_btn.visible = false
 	bank_btn.visible = false
-	stop_btn.visible = true # 此时显示 Stop 按钮
 	
-	# --- 新增：显示骰盅并开始摇晃 ---
+	# --- 修改：显示手动操作组 ---
+	stop_btn.visible = true
+	shake_up_btn.visible = true
+	shake_down_btn.visible = true
+	# -------------------------
+	
+	# 显示骰盅
 	dice_cup.visible = true
-	dice_cup.modulate.a = 1.0 # 确保不透明
+	dice_cup.modulate.a = 1.0
 	
-	# 这一步很重要：先把骰子藏在盅底下，并重新洗牌位置
+	# 强制让杯子归位到正中心 (防止上回合偏移了没回来)
+	var tray_center = container.size / 2
+	var cup_half = dice_cup.size / 2
+	dice_cup.position = tray_center - cup_half
+	
+	# 隐藏骰子并“洗牌”
 	for die in container.get_children(): 
 		if die != dice_cup:
 			die.disabled = true
-			# 在摇的时候就可以先随机好位置，等揭开
-			# 或者你也可以在揭开瞬间随机，这里先随机是为了逻辑统一
 	
-	scatter_dice_visuals() 
+	scatter_dice_visuals() # 先随机散布一次
 	
-	# 开始摇晃动画 (Loop)
-	start_shaking_tween()
+	# 注意：这里不再调用 start_shaking_tween() 了！
 
 var shake_tween: Tween
 
@@ -234,36 +250,66 @@ func start_shaking_tween():
 	shake_tween.tween_property(dice_cup, "position", target_center + Vector2(0, -20), 0.1)
 	shake_tween.tween_property(dice_cup, "position", target_center + Vector2(0, 20), 0.1)
 
+func _on_shake_up():
+	perform_shake(Vector2(0, -30)) # 向上偏移
+
+func _on_shake_down():
+	perform_shake(Vector2(0, 30)) # 向下偏移
+
+func perform_shake(direction_offset: Vector2):
+	# 1. 每次摇的时候，里面的骰子位置都要变！
+	scatter_dice_visuals() 
+	
+	# 2. 播放摇晃音效 (如果有)
+	# if not sfx_roll.playing: sfx_roll.play()
+	
+	# 3. 杯子位移动画 (Punch效果：移过去立刻弹回来)
+	var tray_center = container.size / 2
+	var cup_half = dice_cup.size / 2
+	var base_pos = tray_center - cup_half
+	
+	# 加上一点随机左右偏移，模拟手的不稳定性
+	var random_x = randf_range(-10, 10)
+	var target_pos = base_pos + direction_offset + Vector2(random_x, 0)
+	
+	var tween = create_tween()
+	# 快速移过去 (0.05s)
+	tween.tween_property(dice_cup, "position", target_pos, 0.05)
+	# 稍微慢点弹回来 (0.1s)
+	tween.tween_property(dice_cup, "position", base_pos, 0.1).set_trans(Tween.TRANS_BOUNCE)
+
 func _on_stop_pressed():
 	is_rolling = false
+	
+	# --- 修改：隐藏所有手动操作按钮 ---
 	stop_btn.visible = false
+	shake_up_btn.visible = false
+	shake_down_btn.visible = false
+	# ------------------------------
 	
-	# 1. 停止摇晃
-	if shake_tween: shake_tween.kill()
-	dice_cup.set_anchors_preset(Control.PRESET_CENTER)
-	dice_cup.set_offsets_preset(Control.PRESET_CENTER)
+	# 确保杯子在正中心
+	var tray_center = container.size / 2
+	var cup_half = dice_cup.size / 2
+	dice_cup.position = tray_center - cup_half
 	
-	# 2. 播放“揭盖”动画 (1秒)
-	# 这里我们做一个简单的淡出+向上飘走的动画
+	# 揭盖动画 (保持不变)
 	var reveal_tween = create_tween()
-	reveal_tween.tween_property(dice_cup, "position", Vector2(0, -100), 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	reveal_tween.tween_property(dice_cup, "position", dice_cup.position + Vector2(0, -100), 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 	reveal_tween.parallel().tween_property(dice_cup, "modulate:a", 0.0, 0.5)
 	
-	# 3. 等待动画结束
 	await reveal_tween.finished
 	dice_cup.visible = false
 	
-	# 4. 恢复交互并结算
+	# 恢复常规按钮
 	roll_btn.visible = true
 	bank_btn.visible = true
 	
 	for die in container.get_children():
 		if die != dice_cup:
 			die.disabled = false
-			die.reset_visual_transform() # 这里的 reset 可能要改改，不要重置 position
-	
+			die.reset_visual_transform() 
+			
 	check_bust_logic()
-# --- 按钮事件 ---
 
 func _on_roll_pressed():
 	if is_game_over: return
@@ -304,6 +350,50 @@ func _on_bank_pressed():
 func _on_restart_pressed():
 	start_game()
 
+func _unhandled_input(event):
+	# 只有按下按键的那一帧才触发，防止长按连发
+	if not event is InputEventKey or not event.pressed or event.echo:
+		return
+
+	# --- 全局通用按键 ---
+	
+	# B键：重开游戏
+	if event.keycode == KEY_B:
+		if restart_btn.visible and not restart_btn.disabled:
+			_on_restart_pressed()
+			return
+
+	# G键：查看骰子 (揭盖)
+	# 这个键必须在摇骰子阶段 (is_rolling) 且按钮可见时才有效
+	if event.keycode == KEY_G:
+		if is_rolling and stop_btn.visible:
+			_on_stop_pressed()
+			return
+
+	# --- 玩家专属按键逻辑 ---
+	
+	if current_player_index == 0: # P1 玩家 (左侧键盘区)
+		match event.keycode:
+			KEY_W: # 向上摇
+				if is_rolling and shake_up_btn.visible: _on_shake_up()
+			KEY_S: # 向下摇
+				if is_rolling and shake_down_btn.visible: _on_shake_down()
+			KEY_SPACE: # 继续投掷 (Roll)
+				if not is_rolling and roll_btn.visible and not roll_btn.disabled: _on_roll_pressed()
+			KEY_D: # 离手 (Bank)
+				if not is_rolling and bank_btn.visible and not bank_btn.disabled: _on_bank_pressed()
+	
+	else: # P2 玩家 (右侧键盘区)
+		match event.keycode:
+			KEY_I: # 向上摇
+				if is_rolling and shake_up_btn.visible: _on_shake_up()
+			KEY_K: # 向下摇
+				if is_rolling and shake_down_btn.visible: _on_shake_down()
+			KEY_SPACE: # 继续投掷 (Roll) - P2 也用空格
+				if not is_rolling and roll_btn.visible and not roll_btn.disabled: _on_roll_pressed()
+			KEY_J: # 离手 (Bank)
+				if not is_rolling and bank_btn.visible and not bank_btn.disabled: _on_bank_pressed()
+
 # --- 核心逻辑 ---
 
 # 检查结果 (以前叫 roll_and_check，现在拆开了)
@@ -330,11 +420,15 @@ func handle_bust():
 	score_label.modulate = Color(1, 0, 0)
 	
 	# 禁用按钮
-	roll_btn.visible = false # 爆掉了就不准再投了
-	bank_btn.visible = false # 也不准存分
+	roll_btn.visible = false 
+	bank_btn.visible = false 
 	stop_btn.visible = false
 	
 	for die in container.get_children():
+		# --- 新增：千万别把杯子也染红了 ---
+		if die == dice_cup: continue 
+		# -------------------------------
+		
 		die.modulate = Color(1, 0.5, 0.5)
 
 	await get_tree().create_timer(2.0).timeout
