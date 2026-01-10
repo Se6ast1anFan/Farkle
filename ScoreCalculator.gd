@@ -1,57 +1,62 @@
 class_name ScoreCalculator
 extends Node
 
-# 计算一组骰子的分数
-# dice_values: 数组，包含骰子点数，例如 [1, 5, 2, 2, 2]
-# is_fresh_roll: 布尔值，是否是刚投掷出的状态（用于判断顺子）
-static func calculate_score(dice_values: Array, is_fresh_roll: bool = false) -> int:
+# 注意：去掉了 is_fresh_roll 参数，因为算分不应该关心是不是刚投出来的，
+# 只要你选中的骰子凑成了顺子，就该给你分。
+static func calculate_score(dice_values: Array, _unused_arg: bool = false) -> int:
 	var score = 0
 	var counts = {1:0, 2:0, 3:0, 4:0, 5:0, 6:0}
-	var dice_count = dice_values.size()
 	
-	# 统计每个点数出现了几次
 	for val in dice_values:
-		if val >= 1 and val <= 6:
-			counts[val] += 1
+		if val >= 1 and val <= 6: counts[val] += 1
 			
-	# --- 1. 优先判断顺子 (必须是一次性投出的，且骰子数量符合) ---
-	if is_fresh_roll:
-		# 1-6 全顺子
-		if dice_count == 6 and _is_straight(counts, 1, 6):
-			return 1500
-		# 1-5 小顺子
-		if dice_count >= 5 and _is_straight(counts, 1, 5):
-			return 500
-		# 2-6 小顺子
-		if dice_count >= 5 and _is_straight(counts, 2, 6):
-			return 750
+	# --- 1. 优先检测顺子 ---
+	# 逻辑升级：如果检测到顺子，加分后要“消耗”掉这些骰子，
+	# 这样剩下的骰子（例如多出来的那个5）还能继续往下走，参与单点计分。
+	
+	var straight_found = false
+	
+	# 1-6 大顺子 (1500)
+	if _is_straight(counts, 1, 6):
+		score += 1500
+		_consume_dice(counts, 1, 6)
+		straight_found = true
+	
+	# 1-5 小顺子 (500) - 互斥检测
+	elif _is_straight(counts, 1, 5): 
+		score += 500
+		_consume_dice(counts, 1, 5)
+		straight_found = true
+		
+	# 2-6 小顺子 (750) - 互斥检测
+	elif _is_straight(counts, 2, 6): 
+		score += 750
+		_consume_dice(counts, 2, 6)
+		straight_found = true
 
-	# --- 2. 判断三条及以上 (N of a Kind) ---
+	# --- 2. 检测多重骰子 (三条、四条等) ---
+	# 顺子和豹子理论上不会同时出现在同一组骰子里(除非你有7个以上骰子)，
+	# 但为了逻辑严谨，我们继续处理剩下的 counts
 	for num in range(1, 7):
 		var count = counts[num]
 		if count >= 3:
-			var base = 0
-			if num == 1:
-				base = 1000
-			else:
-				base = num * 100
-			
-			# KCD规则：三个骰子后，每多一个翻一倍
-			var multiplier = pow(2, count - 3)
-			score += base * multiplier
-			
-			# 这种点数全部算完分了，清零，避免后面重复算单骰
-			counts[num] = 0
+			var base = 1000 if num == 1 else num * 100
+			score += base * pow(2, count - 3)
+			counts[num] = 0 # 消耗掉所有用于豹子的骰子
 
-	# --- 3. 判断剩余单骰 (只有1和5) ---
+	# --- 3. 检测剩余的单点 (1和5) ---
 	score += counts[1] * 100
 	score += counts[5] * 50
 	
 	return score
 
-# 辅助工具：判断是不是顺子
+# 检查是否存在顺子
 static func _is_straight(counts: Dictionary, start: int, end: int) -> bool:
 	for i in range(start, end + 1):
-		if counts[i] < 1:
-			return false
+		if counts[i] < 1: return false
 	return true
+
+# 消耗骰子 (将计数减1)
+static func _consume_dice(counts: Dictionary, start: int, end: int):
+	for i in range(start, end + 1):
+		counts[i] -= 1
