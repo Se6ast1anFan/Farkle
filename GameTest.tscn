@@ -139,3 +139,31 @@ offset_top = -31.0
 grow_horizontal = 0
 grow_vertical = 0
 text = "重开游戏"
+
+[node name="PauseButton" type="Button" parent="."]
+layout_mode = 0
+offset_right = 8.0
+offset_bottom = 8.0
+text = "说明"
+
+[node name="PauseMenu" type="Panel" parent="."]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="Label_Title" type="Label" parent="PauseMenu"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+text = "游戏已暂停"
+
+[node name="RichTextLabel" type="RichTextLabel" parent="PauseMenu"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="ResumeButton" type="Button" parent="PauseMenu"]
+layout_mode = 0
+offset_right = 8.0
+offset_bottom = 8.0
+text = "回到游戏"

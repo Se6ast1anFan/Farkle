@@ -15,6 +15,13 @@ extends Control
 @onready var shake_down_btn = $VBoxContainer/ButtonBox/ShakeDownBtn
 @onready var restart_btn = $RestartButton
 
+# ... 其他变量 ...
+@onready var pause_btn = $PauseButton
+@onready var pause_menu = $PauseMenu
+@onready var pm_title = $PauseMenu/Label_Title
+@onready var pm_text = $PauseMenu/RichTextLabel
+@onready var resume_btn = $PauseMenu/ResumeButton
+
 # --- 游戏数据 ---
 const WINNING_SCORE = 2000
 const TRAY_RADIUS = 150.0  # 骰盘半径
@@ -40,6 +47,21 @@ func _ready():
 	for child in container.get_children():
 		if child == dice_cup: continue 
 		child.toggled.connect(_on_dice_clicked)
+	
+	# --- 纯代码设置暂停逻辑模式 ---
+	# 1. 根节点设为 ALWAYS，确保它能一直处理 ESC 按键
+	self.process_mode = Node.PROCESS_MODE_ALWAYS
+	
+	# 2. 暂停菜单和继续按钮设为 WHEN_PAUSED，只有暂停时它们才工作
+	# (其实 Panel 只要父级没停就行，但保险起见设一下)
+	pause_menu.process_mode = Node.PROCESS_MODE_WHEN_PAUSED
+	
+	# 3. 其他游戏元素不需要手动设，默认是 INHERIT (继承)，
+	# 一旦我们调用 get_tree().paused = true，所有没特殊设置的节点都会停。
+	
+	# 绑定点击事件
+	pause_btn.pressed.connect(toggle_pause)
+	resume_btn.pressed.connect(toggle_pause)
 	
 	roll_btn.pressed.connect(_on_roll_pressed)
 	bank_btn.pressed.connect(_on_bank_pressed)
@@ -84,7 +106,7 @@ func setup_ui_layout():
 	# 增加一点组件之间的间距
 	main_vbox.add_theme_constant_override("separation", 30)
 
-# 5. 设置重开按钮 (RestartButton) - 始终吸附右上角
+	# 5. 设置重开按钮 (RestartButton) - 始终吸附右上角
 	restart_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	
 	# --- 修改开始 ---
@@ -101,11 +123,19 @@ func setup_ui_layout():
 	btn_box.alignment = BoxContainer.ALIGNMENT_CENTER # 按钮居中对齐
 	btn_box.add_theme_constant_override("separation", 20) # 按钮间距
 	
-	# 7. 确保所有按钮有最小尺寸
-	# 把新按钮也加进列表里去设置大小
-	var all_btns = [roll_btn, bank_btn, stop_btn, restart_btn, shake_up_btn, shake_down_btn]
+# 7. 确保所有按钮有最小尺寸，方便手机触摸
+	# --- 修改：同时设置轴心点 (Pivot Offset) 以支持缩放动画 ---
+	var all_btns = [roll_btn, bank_btn, stop_btn, restart_btn, shake_up_btn, shake_down_btn, resume_btn]
 	for btn in all_btns:
-		btn.custom_minimum_size = Vector2(120, 60)
+		var btn_size = Vector2(120, 60) # 默认大小
+		# 如果是继续按钮，它比较大
+		if btn == resume_btn: btn_size = Vector2(200, 80)
+		
+		btn.custom_minimum_size = btn_size
+		btn.size = btn_size # 强制应用尺寸
+		
+		# 关键：设置轴心点为按钮中心
+		btn.pivot_offset = btn_size / 2
 	
 	# 默认隐藏摇晃按钮
 	shake_up_btn.visible = false
@@ -146,12 +176,115 @@ func setup_ui_layout():
 	
 	var cup_style = StyleBoxFlat.new()
 	cup_style.bg_color = Color(0.4, 0.2, 0.1) # 棕色
-	# 圆角半径设为直径的一半，保证绝对是圆的
-	cup_style.set_corner_radius_all(cup_diameter / 2) 
+	# 60 这个数值越大越圆，越小越方。320的大小配 60 看起来像个 APP 图标或圆角盒子
+	cup_style.set_corner_radius_all(100) 
 	
 	dice_cup.add_theme_stylebox_override("panel", cup_style)
 	dice_cup.visible = false 
 	# --- 修改结束 ---
+
+	# --- 8. 设置暂停按钮 (放在重开按钮正下方) ---
+	pause_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	pause_btn.offset_left = -140
+	pause_btn.offset_right = -20
+	pause_btn.offset_top = 110    # 重开是40-100，这里从110开始
+	pause_btn.offset_bottom = 170 
+	pause_btn.custom_minimum_size = Vector2(120, 60)
+
+# --- 9. 设置暂停菜单 (父容器) ---
+	# 确保父容器铺满全屏。使用 set_anchors_and_offsets_preset 强制重置所有偏移量为0
+	pause_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	pause_menu.visible = false 
+	
+	# 设置背景色
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0, 0, 0, 0.9) # 90% 黑
+	pause_menu.add_theme_stylebox_override("panel", style)
+	
+	# 拦截点击 (防止穿透)
+	pause_menu.mouse_filter = Control.MOUSE_FILTER_STOP
+
+# --- 10. 设置暂停菜单内部子节点布局 (蛋糕分层法) ---
+	
+	# === A. 标题层 (调整：压缩高度，给下面腾地方) ===
+	pm_title.anchor_left = 0
+	pm_title.anchor_right = 1
+	pm_title.anchor_top = 0
+	pm_title.anchor_bottom = 0.15 # 从 0.2 改为 0.15，标题不需要那么高
+	
+	# ... (标题的 offset 和 alignment 设置代码保持不变) ...
+	pm_title.offset_left = 0
+	pm_title.offset_right = 0
+	pm_title.offset_top = 0
+	pm_title.offset_bottom = 0
+	pm_title.text = "游戏已暂停"
+	pm_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pm_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	pm_title.add_theme_font_size_override("font_size", 64)
+
+	# === B. 规则文本 (调整：大幅增加高度范围) ===
+	# 左右边距稍微调小一点 (0.05)，让横向能写下更多字
+	pm_text.anchor_left = 0.05 
+	pm_text.anchor_right = 0.95
+	
+	# 上下范围扩大！从标题下面(0.15)一直延伸到按钮上面(0.82)
+	pm_text.anchor_top = 0.15 
+	pm_text.anchor_bottom = 0.82
+	
+	pm_text.offset_left = 0
+	pm_text.offset_right = 0
+	pm_text.offset_top = 0
+	pm_text.offset_bottom = 0
+	
+	pm_text.fit_content = false 
+	pm_text.scroll_active = true
+	pm_text.bbcode_enabled = true 
+	
+	# 使用你提供的最新文案
+	pm_text.text = """[center][font_size=32][b]📜 游戏规则说明[/b][/font_size]
+
+[color=#ffdd88][b]🏆 获胜目标[/b][/color]
+双人轮流，率先累计总分达到 [color=#44ff44][b]2000 分[/b][/color] 者获胜。
+
+[color=#ffdd88][b]🎲 计分指南[/b][/color]
+[color=#88ccff]• 单个骰子[/color]: 仅 [b]1点[/b](100分) 和 [b]5点[/b](50分) 得分。
+[color=#88ccff]• 豹子(3个相同)[/color]: 面值x100 [color=#aaaaaa](例: 222=200)[/color]。
+  [color=#ff6666]*特例: 111 = 1000 分！[/color]
+[color=#88ccff]• 多重豹子[/color]: 4个及以上，分数随个数翻倍。
+[color=#88ccff]• 顺子[/color]: 1~5=[b]500[/b]，2~6=[b]750[/b]，1~6=[b]1500[/b]。
+
+[color=#ffdd88][b]⚠️ 核心玩法[/b][/color]
+必须留出得分骰子才能[b]离手[/b]或[b]继续投掷[/b]。继续投掷若[b]无分[/b]则[color=#ff4444][b]爆掉清零本轮[/b][/color]。
+6个骰子全得分可[color=#ffff44][b]清台[/b][/color]，保留分数并全部重新投掷。
+
+--------------------------------------------------
+[b]【按键映射】[/b]
+[color=#44ff44]P1[/color]: 向上/下摇(W/S)  离手(D)
+[color=#44ff44]P2[/color]: 向上/下摇(I/K)  离手(J)
+[color=#aaaaaa]通用[/color]: 查看骰子(G)  继续投掷(空格)  说明(ESC)  重开游戏(B)[/center]"""
+	# === C. 按钮层 (占据底部 85% 处) ===
+	# 这里的策略是：锚点定在一个具体的水平线(0.85)上，然后定死宽高
+	
+	resume_btn.anchor_left = 0.5  # 水平中心
+	resume_btn.anchor_right = 0.5
+	resume_btn.anchor_top = 0.85  # 屏幕高度的 85% 位置
+	resume_btn.anchor_bottom = 0.85
+	
+	# 关键：开启双向生长，配合下面的负偏移量来实现绝对居中
+	resume_btn.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	resume_btn.grow_vertical = Control.GROW_DIRECTION_BOTH
+	
+	# 设定按钮的具体大小 (宽200，高80)
+	var btn_w = 200
+	var btn_h = 80
+	
+	# 手动偏移：从中心点向左移一半宽度，向右移一半宽度
+	resume_btn.offset_left = -btn_w / 2
+	resume_btn.offset_right = btn_w / 2
+	resume_btn.offset_top = 0
+	resume_btn.offset_bottom = btn_h # 向下生长80像素
+	
+	resume_btn.text = "继续游戏"
 
 # --- 关键：每帧运行的动画逻辑 ---
 func _process(delta):
@@ -251,9 +384,11 @@ func start_shaking_tween():
 	shake_tween.tween_property(dice_cup, "position", target_center + Vector2(0, 20), 0.1)
 
 func _on_shake_up():
+	if get_tree().paused: return
 	perform_shake(Vector2(0, -30)) # 向上偏移
 
 func _on_shake_down():
+	if get_tree().paused: return
 	perform_shake(Vector2(0, 30)) # 向下偏移
 
 func perform_shake(direction_offset: Vector2):
@@ -279,6 +414,7 @@ func perform_shake(direction_offset: Vector2):
 	tween.tween_property(dice_cup, "position", base_pos, 0.1).set_trans(Tween.TRANS_BOUNCE)
 
 func _on_stop_pressed():
+	if get_tree().paused: return
 	is_rolling = false
 	
 	# --- 修改：隐藏所有手动操作按钮 ---
@@ -312,6 +448,7 @@ func _on_stop_pressed():
 	check_bust_logic()
 
 func _on_roll_pressed():
+	if get_tree().paused: return
 	if is_game_over: return
 	
 	# 点击“开始投掷”时，先锁定之前的分数
@@ -337,6 +474,7 @@ func _on_roll_pressed():
 		start_rolling_anim()
 
 func _on_bank_pressed():
+	if get_tree().paused: return
 	if is_game_over: return
 	if turn_accumulated_score + current_selection_score == 0: return
 	
@@ -348,52 +486,74 @@ func _on_bank_pressed():
 		switch_turn()
 
 func _on_restart_pressed():
+	if get_tree().paused: return
 	start_game()
 
+func toggle_pause():
+	var is_paused = not pause_menu.visible
+	pause_menu.visible = is_paused
+	get_tree().paused = is_paused
+
 func _unhandled_input(event):
-	# 只有按下按键的那一帧才触发，防止长按连发
 	if not event is InputEventKey or not event.pressed or event.echo:
+		return
+
+	# ESC 键
+	if event.keycode == KEY_ESCAPE:
+		# 既然暂停按钮没有物理映射，我们可以给它播放一个动画，或者不放
+		toggle_pause()
+		return
+
+	if get_tree().paused or is_game_over:
 		return
 
 	# --- 全局通用按键 ---
 	
-	# B键：重开游戏
+	# B键：重开
 	if event.keycode == KEY_B:
+		animate_button_press(restart_btn) # <--- 视觉反馈
 		if restart_btn.visible and not restart_btn.disabled:
 			_on_restart_pressed()
 			return
 
-	# G键：查看骰子 (揭盖)
-	# 这个键必须在摇骰子阶段 (is_rolling) 且按钮可见时才有效
+	# G键：查看骰子
 	if event.keycode == KEY_G:
+		animate_button_press(stop_btn) # <--- 视觉反馈
 		if is_rolling and stop_btn.visible:
 			_on_stop_pressed()
 			return
 
-	# --- 玩家专属按键逻辑 ---
+	# --- 玩家专属按键 ---
 	
-	if current_player_index == 0: # P1 玩家 (左侧键盘区)
+	if current_player_index == 0: # P1
 		match event.keycode:
 			KEY_W: # 向上摇
+				animate_button_press(shake_up_btn) # <--- 视觉反馈
 				if is_rolling and shake_up_btn.visible: _on_shake_up()
 			KEY_S: # 向下摇
+				animate_button_press(shake_down_btn) # <--- 视觉反馈
 				if is_rolling and shake_down_btn.visible: _on_shake_down()
-			KEY_SPACE: # 继续投掷 (Roll)
+			KEY_SPACE: # 重投
+				animate_button_press(roll_btn) # <--- 视觉反馈
 				if not is_rolling and roll_btn.visible and not roll_btn.disabled: _on_roll_pressed()
-			KEY_D: # 离手 (Bank)
+			KEY_D: # 存分
+				animate_button_press(bank_btn) # <--- 视觉反馈
 				if not is_rolling and bank_btn.visible and not bank_btn.disabled: _on_bank_pressed()
 	
-	else: # P2 玩家 (右侧键盘区)
+	else: # P2
 		match event.keycode:
-			KEY_I: # 向上摇
+			KEY_I: 
+				animate_button_press(shake_up_btn)
 				if is_rolling and shake_up_btn.visible: _on_shake_up()
-			KEY_K: # 向下摇
+			KEY_K: 
+				animate_button_press(shake_down_btn)
 				if is_rolling and shake_down_btn.visible: _on_shake_down()
-			KEY_SPACE: # 继续投掷 (Roll) - P2 也用空格
+			KEY_SPACE: 
+				animate_button_press(roll_btn)
 				if not is_rolling and roll_btn.visible and not roll_btn.disabled: _on_roll_pressed()
-			KEY_J: # 离手 (Bank)
+			KEY_J: 
+				animate_button_press(bank_btn)
 				if not is_rolling and bank_btn.visible and not bank_btn.disabled: _on_bank_pressed()
-
 # --- 核心逻辑 ---
 
 # 检查结果 (以前叫 roll_and_check，现在拆开了)
@@ -460,6 +620,7 @@ func update_player_labels():
 		p2_label.modulate = Color(0, 1, 0)
 
 func _on_dice_clicked(pressed):
+	if get_tree().paused: return
 	calculate_selection_score()
 
 func calculate_selection_score():
@@ -494,3 +655,19 @@ func scatter_dice_visuals():
 		# 4. 设置位置 (需减去骰子自身中心偏移)
 		die.position = center + offset - (Vector2(DICE_SIZE, DICE_SIZE) / 2)
 		die.rotation_degrees = randf_range(0, 360) # 随机旋转
+
+# 播放按钮按下的动画
+func animate_button_press(btn: Button):
+	# 安全检查：如果按钮不存在、隐藏或禁用，就不播放动画
+	if not btn or not btn.visible or btn.disabled: return
+	
+	# 创建 Tween
+	var tween = create_tween()
+	
+	# 阶段 1 (按下): 0.05秒内，变暗 + 缩小到 90%
+	tween.tween_property(btn, "modulate", Color(0.7, 0.7, 0.7), 0.05)
+	tween.parallel().tween_property(btn, "scale", Vector2(0.9, 0.9), 0.05)
+	
+	# 阶段 2 (弹回): 0.05秒内，恢复原色 + 恢复原大小
+	tween.tween_property(btn, "modulate", Color(1, 1, 1), 0.05)
+	tween.parallel().tween_property(btn, "scale", Vector2(1.0, 1.0), 0.05)
