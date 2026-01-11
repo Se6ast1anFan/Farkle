@@ -41,39 +41,60 @@ var is_game_over = false   # 游戏是否结束
 
 func _ready():
 	randomize()
-	setup_ui_layout()
 	
-	# ... (绑定信号的代码保持不变，记得要有那个 if child == dice_cup: continue) ...
-	for child in container.get_children():
-		if child == dice_cup: continue 
-		child.toggled.connect(_on_dice_clicked)
+	# 初始化 UI 布局
+	setup_ui_layout() 
 	
-	# --- 纯代码设置暂停逻辑模式 ---
-	# 1. 根节点设为 ALWAYS，确保它能一直处理 ESC 按键
-	self.process_mode = Node.PROCESS_MODE_ALWAYS
+# --- 1. 绑定骰子信号 (修改版：带视觉反馈) ---
+	for die in container.get_children():
+		if die == dice_cup: continue 
+		
+		# 断开旧的连接（防止你之前的代码残留）
+		if die.toggled.is_connected(_on_dice_clicked):
+			die.toggled.disconnect(_on_dice_clicked)
+			
+		# 使用匿名函数，把当前点击的 die 传进去
+		die.toggled.connect(func(is_pressed): 
+			_update_dice_visual(die, is_pressed) # 1. 改变颜色和大小
+			calculate_selection_score()          # 2. 计算分数
+		)
 	
-	# 2. 暂停菜单和继续按钮设为 WHEN_PAUSED，只有暂停时它们才工作
-	# (其实 Panel 只要父级没停就行，但保险起见设一下)
-	pause_menu.process_mode = Node.PROCESS_MODE_WHEN_PAUSED
-	
-	# 3. 其他游戏元素不需要手动设，默认是 INHERIT (继承)，
-	# 一旦我们调用 get_tree().paused = true，所有没特殊设置的节点都会停。
-	
-	# 绑定点击事件
-	pause_btn.pressed.connect(toggle_pause)
-	resume_btn.pressed.connect(toggle_pause)
-	
+	# --- 2. 绑定按钮逻辑信号 (原有逻辑) ---
 	roll_btn.pressed.connect(_on_roll_pressed)
 	bank_btn.pressed.connect(_on_bank_pressed)
 	stop_btn.pressed.connect(_on_stop_pressed)
-	shake_up_btn.pressed.connect(_on_shake_up)
-	shake_down_btn.pressed.connect(_on_shake_down)
 	restart_btn.pressed.connect(_on_restart_pressed)
 	
-	# --- 核心修复：等待一帧 ---
-	# 让 UI 引擎先把界面排好版，确保 container.size 是正确的值
-	await get_tree().process_frame 
+	# --- 新增：摇晃按钮逻辑 ---
+	shake_up_btn.pressed.connect(_on_shake_up)
+	shake_down_btn.pressed.connect(_on_shake_down)
 	
+	# --- 3. 暂停相关逻辑 ---
+	self.process_mode = Node.PROCESS_MODE_ALWAYS
+	pause_menu.process_mode = Node.PROCESS_MODE_WHEN_PAUSED
+	pause_btn.pressed.connect(toggle_pause)
+	resume_btn.pressed.connect(toggle_pause)
+
+	# ==========================================
+	# 🔥 核心修改：给所有按钮批量绑定“视觉动画”
+	# ==========================================
+	# 无论你是点鼠标，还是以后用触摸屏，只要触发 pressed 信号，就会播放动画
+	var all_action_btns = [
+		roll_btn, bank_btn, stop_btn, restart_btn, 
+		shake_up_btn, shake_down_btn, 
+		pause_btn, resume_btn
+	]
+	
+	for btn in all_action_btns:
+		# --- 修改：从 pressed 改为 button_down ---
+		# button_down 代表“鼠标刚刚按下”的瞬间，不用等松开，反馈最及时
+		if not btn.button_down.is_connected(animate_button_press):
+			btn.button_down.connect(func(): animate_button_press(btn))
+
+	# 开始游戏
+	# -----------------
+	# 修复布局闪烁问题：等待一帧让 Godot 算好尺寸
+	await get_tree().process_frame 
 	start_game()
 
 # --- 新增这个函数：纯代码控制布局 ---
@@ -254,13 +275,15 @@ func setup_ui_layout():
 [color=#88ccff]• 顺子[/color]: 1~5=[b]500[/b]，2~6=[b]750[/b]，1~6=[b]1500[/b]。
 
 [color=#ffdd88][b]⚠️ 核心玩法[/b][/color]
-必须留出得分骰子才能[b]离手[/b]或[b]继续投掷[/b]。继续投掷若[b]无分[/b]则[color=#ff4444][b]爆掉清零本轮[/b][/color]。
+必须留出得分骰子才能[b]离手[/b]或[b]继续投掷[/b]。
+继续投掷若[b]无分[/b]则[color=#ff4444][b]爆掉清零本轮分池[/b][/color]。
 6个骰子全得分可[color=#ffff44][b]清台[/b][/color]，保留分数并全部重新投掷。
 
---------------------------------------------------
+-------------------------下滑查看更多-------------------------
+
 [b]【按键映射】[/b]
 [color=#44ff44]P1[/color]: 向上/下摇(W/S)  离手(D)
-[color=#44ff44]P2[/color]: 向上/下摇(I/K)  离手(J)
+[color=#44ff44]P2[/color]: 向上/下摇(I/K)  离手(L)
 [color=#aaaaaa]通用[/color]: 查看骰子(G)  继续投掷(空格)  说明(ESC)  重开游戏(B)[/center]"""
 	# === C. 按钮层 (占据底部 85% 处) ===
 	# 这里的策略是：锚点定在一个具体的水平线(0.85)上，然后定死宽高
@@ -333,38 +356,41 @@ func switch_turn():
 
 # 开始摇动动画
 func start_rolling_anim():
+	# --- 新增：强制终止上一局的揭盖动画 ---
+	if reveal_tween and reveal_tween.is_valid():
+		reveal_tween.kill()
+	# -----------------------------------
+
 	is_rolling = true
 	score_label.visible = false
 	
-	# 隐藏常规按钮
+	# ... (隐藏UI的代码) ...
 	roll_btn.visible = false
 	bank_btn.visible = false
 	
-	# --- 修改：显示手动操作组 ---
 	stop_btn.visible = true
 	shake_up_btn.visible = true
 	shake_down_btn.visible = true
-	# -------------------------
 	
 	# 显示骰盅
 	dice_cup.visible = true
-	dice_cup.modulate.a = 1.0
 	
-	# 强制让杯子归位到正中心 (防止上回合偏移了没回来)
+	# --- 关键：因为杀掉了旧动画，这里强制重置为不透明 ---
+	dice_cup.modulate.a = 1.0 
+	
+	# ... (后续代码：归位杯子、散布骰子等) ...
 	var tray_center = container.size / 2
 	var cup_half = dice_cup.size / 2
 	dice_cup.position = tray_center - cup_half
 	
-	# 隐藏骰子并“洗牌”
 	for die in container.get_children(): 
 		if die != dice_cup:
 			die.disabled = true
 	
-	scatter_dice_visuals() # 先随机散布一次
-	
-	# 注意：这里不再调用 start_shaking_tween() 了！
+	scatter_dice_visuals()
 
 var shake_tween: Tween
+var reveal_tween: Tween
 
 func start_shaking_tween():
 	if shake_tween: shake_tween.kill()
@@ -416,24 +442,28 @@ func perform_shake(direction_offset: Vector2):
 func _on_stop_pressed():
 	if get_tree().paused: return
 	is_rolling = false
-	
-	# --- 修改：隐藏所有手动操作按钮 ---
 	stop_btn.visible = false
 	shake_up_btn.visible = false
 	shake_down_btn.visible = false
-	# ------------------------------
 	
-	# 确保杯子在正中心
+	# 归位杯子
 	var tray_center = container.size / 2
 	var cup_half = dice_cup.size / 2
 	dice_cup.position = tray_center - cup_half
 	
-	# 揭盖动画 (保持不变)
-	var reveal_tween = create_tween()
+	# --- 修改：使用全局变量存储 Tween ---
+	if reveal_tween and reveal_tween.is_valid(): reveal_tween.kill() # 防御性编程
+	reveal_tween = create_tween()
+	# --------------------------------
+	
 	reveal_tween.tween_property(dice_cup, "position", dice_cup.position + Vector2(0, -100), 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 	reveal_tween.parallel().tween_property(dice_cup, "modulate:a", 0.0, 0.5)
 	
 	await reveal_tween.finished
+	
+	# 卫语句 (你上一轮加的，保留它)
+	if is_rolling: return
+	
 	dice_cup.visible = false
 	
 	# 恢复常规按钮
@@ -551,7 +581,7 @@ func _unhandled_input(event):
 			KEY_SPACE: 
 				animate_button_press(roll_btn)
 				if not is_rolling and roll_btn.visible and not roll_btn.disabled: _on_roll_pressed()
-			KEY_J: 
+			KEY_L: 
 				animate_button_press(bank_btn)
 				if not is_rolling and bank_btn.visible and not bank_btn.disabled: _on_bank_pressed()
 # --- 核心逻辑 ---
@@ -636,38 +666,78 @@ func calculate_selection_score():
 	score_label.text = "本轮池分: %d (+选中: %d)" % [turn_accumulated_score, current_selection_score]
 
 func scatter_dice_visuals():
+	var placed_positions: Array[Vector2] = []
+	
 	for die in container.get_children():
-		if die == dice_cup: continue # 跳过骰盅节点
+		if die == dice_cup: continue 
 		
-		# 1. 随机角度 (0 到 2π)
-		var angle = randf() * TAU 
-		
-		# 2. 随机距离 (开方是为了保证分布均匀，不会聚集在圆心)
-		# 半径减去骰子大小的一半，防止超出边界
-		var max_r = TRAY_RADIUS - (DICE_SIZE / 2)
-		var dist = sqrt(randf()) * max_r
-		
-		# 3. 计算坐标 (极坐标转笛卡尔坐标)
-		# 注意：container 的中心是 size/2
+		# --- 修复核心：初始化一个保底位置 ---
+		# 默认放在中心，防止 20 次尝试全失败后 final_pos 是 (0,0)
 		var center = container.size / 2
-		var offset = Vector2(cos(angle), sin(angle)) * dist
+		var final_pos = center - (Vector2(DICE_SIZE, DICE_SIZE) / 2)
+		# --------------------------------
 		
-		# 4. 设置位置 (需减去骰子自身中心偏移)
-		die.position = center + offset - (Vector2(DICE_SIZE, DICE_SIZE) / 2)
-		die.rotation_degrees = randf_range(0, 360) # 随机旋转
+		var is_position_valid = false
+		
+		# 尝试 20 次找空位
+		for attempt in range(20):
+			var angle = randf() * TAU 
+			var max_r = TRAY_RADIUS - (DICE_SIZE / 2) - 10 
+			var dist = sqrt(randf()) * max_r
+			var offset = Vector2(cos(angle), sin(angle)) * dist
+			var candidate_pos = center + offset - (Vector2(DICE_SIZE, DICE_SIZE) / 2)
+			
+			var too_close = false
+			for existing_pos in placed_positions:
+				if candidate_pos.distance_to(existing_pos) < DICE_SIZE * 0.65:
+					too_close = true
+					break
+			
+			if not too_close:
+				final_pos = candidate_pos
+				is_position_valid = true
+				break
+		
+		# (可选) 如果20次都没找到，可以在这里打印一条警告
+		# if not is_position_valid: print("警告：骰子重叠拥挤，使用了保底位置")
+
+		placed_positions.append(final_pos)
+		die.position = final_pos
+		die.rotation_degrees = randf_range(0, 360)
 
 # 播放按钮按下的动画
 func animate_button_press(btn: Button):
-	# 安全检查：如果按钮不存在、隐藏或禁用，就不播放动画
 	if not btn or not btn.visible or btn.disabled: return
 	
-	# 创建 Tween
 	var tween = create_tween()
 	
-	# 阶段 1 (按下): 0.05秒内，变暗 + 缩小到 90%
-	tween.tween_property(btn, "modulate", Color(0.7, 0.7, 0.7), 0.05)
+	# 阶段 1 (按下): 0.05秒内
+	# 变色：Color(R, G, B, A) -> 红色 + 0.8透明度
+	tween.tween_property(btn, "modulate", Color(1.0, 0.3, 0.3, 0.8), 0.05)
+	# 缩放：缩小到 90%
 	tween.parallel().tween_property(btn, "scale", Vector2(0.9, 0.9), 0.05)
 	
-	# 阶段 2 (弹回): 0.05秒内，恢复原色 + 恢复原大小
-	tween.tween_property(btn, "modulate", Color(1, 1, 1), 0.05)
+	# 阶段 2 (弹回): 0.05秒内，恢复原状
+	tween.tween_property(btn, "modulate", Color(1, 1, 1, 1), 0.05)
 	tween.parallel().tween_property(btn, "scale", Vector2(1.0, 1.0), 0.05)
+
+# 处理骰子选中/取消的视觉状态
+func _update_dice_visual(die: Control, is_selected: bool):
+	var tween = create_tween()
+	
+	if is_selected:
+		# --- 选中状态 ---
+		# 颜色：变成清新的浅绿色 (R=0.6, G=1.0, B=0.6)
+		# 这样能明显区分于没选中的白色，也没选中的灰色好看
+		tween.tween_property(die, "modulate", Color(0.6, 1.0, 0.6), 0.1)
+		
+		# 大小：稍微放大到 1.1 倍，凸显出来
+		tween.parallel().tween_property(die, "scale", Vector2(1.15, 1.15), 0.1)
+		
+	else:
+		# --- 取消选中 ---
+		# 颜色：恢复纯白
+		tween.tween_property(die, "modulate", Color(1, 1, 1), 0.1)
+		
+		# 大小：恢复原状 1.0
+		tween.parallel().tween_property(die, "scale", Vector2(1.0, 1.0), 0.1)
